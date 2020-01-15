@@ -11,7 +11,7 @@ operations ans concurrently HS\_HASHTABLE\_REMOVE and HS\_HASHTABLE\_PUT
 operations, so the GET operation might be interrupted by PUT and/or
 REMOVE.
 
-Three different types of key types are supported:
+Three different key types are supported:
 - uint32_t
 - uint64_t
 - zero terminated strings (char *)
