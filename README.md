@@ -5,7 +5,9 @@ This is an C-based implementation of the [hopscotch hashtable
 alrgorithm](https://people.csail.mit.edu/shanir/publications/disc2008_submission_98.pdf).
 
 The implementation is focused to be used in small microcontroller based
-systems or the Linux kernel. Resizing of the hashmap is not implemented.
+systems or the Linux kernel. Resizing of the hashmap is not implemented,
+so you can't change the size after declaring the hashtable.
+
 One of the major advantages is that you can make HS\_HASHTABLE\_GET
 operations ans concurrently HS\_HASHTABLE\_REMOVE and HS\_HASHTABLE\_PUT
 operations, so the GET operation might be interrupted by PUT and/or
