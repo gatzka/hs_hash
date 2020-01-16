@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.0)
+project(hs_hash VERSION 0.0.1 LANGUAGES C)
 
-add_library(hs_hash INTERFACE)
+add_library(${PROJECT_NAME} INTERFACE)
+add_library(${PROJECT_NAME}:${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
-target_include_directories(hs_hash INTERFACE include/)
+target_include_directories(${PROJECT_NAME} INTERFACE include/)
 
