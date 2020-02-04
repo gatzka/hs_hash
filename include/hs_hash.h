@@ -77,8 +77,18 @@
 
 		#define kmalloc(size, priority) malloc(size)
 		#define kfree(__ptr) free(__ptr)
-		#define wmb() __sync_synchronize()
+		#define wmb() MemoryBarrier()
 	#endif
+#elif _WIN32
+	#include <stdint.h>
+	#include <stdlib.h>
+	#include <string.h>
+
+	#define GFP_KERNEL 1
+
+	#define kmalloc(size, priority) malloc(size)
+	#define kfree(__ptr) free(__ptr)
+	#define wmb() __sync_synchronize()
 #else
 	#error "Unsupported operating system!"
 #endif
