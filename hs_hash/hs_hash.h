@@ -207,6 +207,8 @@ static inline uint32_t find_closer_entry_##name(struct hashtable_##type_name *ta
 			check_hop_info = check_hop_info & ~(mask); \
 			check_hop_info = check_hop_info | (1 << check_distance); \
 			table[check_position].hop_info = check_hop_info; \
+/* hop_position is no longer referenced. Make sure that is visible before the slot gets reused. */ \
+			wmb(); \
 			return hop_position ;\
 		} \
 		--check_distance; \
@@ -221,6 +223,7 @@ static inline int hs_hashtable_put_##name(struct hashtable_##type_name *table, t
 	uint32_t hop_info; \
 	uint32_t free_distance; \
 	uint32_t free_pos; \
+	uint32_t closer_pos; \
 	if (prev_value != NULL) { \
 		memset(prev_value, 0, sizeof(*prev_value)); \
 	} \
@@ -257,7 +260,7 @@ static inline int hs_hashtable_put_##name(struct hashtable_##type_name *table, t
 	} \
 	free_pos = pos; \
 	if (free_distance < add_range_##name) { \
-		do { \
+		for (;;) { \
 			if (free_distance < hop_range_##name()) { \
 				table[free_pos].value = value; \
 				table[free_pos].key = key; \
@@ -266,12 +269,21 @@ static inline int hs_hashtable_put_##name(struct hashtable_##type_name *table, t
 				hop_info = hop_info | (1 << free_distance); \
 				table[hash_pos].hop_info = hop_info; \
 				return HS_HASHTABLE_SUCCESS; \
-			} else { \
-/* Now we must try to swap some entries */ \
-				free_pos = find_closer_entry_##name(table, free_pos); \
-				free_distance = wrap_pos##name(free_pos - hash_pos); \
 			} \
-		} while (free_pos != 0xffffffff); \
+/* Now we must try to swap some entries */ \
+			closer_pos = find_closer_entry_##name(table, free_pos); \
+			if (closer_pos == 0xffffffff) { \
+/* Nothing can be moved into free_pos. If free_pos was vacated by an */ \
+/* earlier move, it still holds a stale copy of the moved entry. Mark it */ \
+/* empty again, otherwise the slot is lost forever. No hop_info bit */ \
+/* refers to free_pos, so concurrent readers can't observe this. */ \
+				table[free_pos].key = (type)HS_HASHTABLE_INVALIDENTRY; \
+				memset(&table[free_pos].value, 0, sizeof(table[free_pos].value)); \
+				break; \
+			} \
+			free_pos = closer_pos; \
+			free_distance = wrap_pos##name(free_pos - hash_pos); \
+		} \
 	} \
 	return HS_HASHTABLE_FULL; \
 } \
