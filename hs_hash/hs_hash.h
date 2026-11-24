@@ -530,8 +530,8 @@ struct value_##name { \
 	void *vals[value_entries]; \
 };\
 struct hs_hashtable_##name { \
-	uint32_t hop_info; \
 	const char *key; \
+	uint32_t hop_info; \
 	struct value_##name value; \
 }; \
 static inline HS_HASH_UNUSED uint32_t hash_func_##name##_string(const char* key) \
@@ -555,8 +555,8 @@ struct value_##name { \
 	void *vals[value_entries]; \
 };\
 struct hs_hashtable_##name { \
-	uint32_t hop_info; \
 	uint32_t key; \
+	uint32_t hop_info; \
 	struct value_##name value; \
 }; \
 static inline HS_HASH_UNUSED uint32_t hash_func_##name##_uint32_t(uint32_t key) \
@@ -572,9 +572,11 @@ DECLARE_HS_HASHTABLE(name, order, uint32_t, uint32_t, value_entries)
 struct value_##name { \
 	void *vals[value_entries]; \
 };\
+/* The key comes first: on 32-bit targets that align uint64_t to 8 */ \
+/* bytes, hop_info first would add 4 bytes of padding before the key. */ \
 struct hs_hashtable_##name { \
-	uint32_t hop_info; \
 	uint64_t key; \
+	uint32_t hop_info; \
 	struct value_##name value; \
 }; \
 static inline HS_HASH_UNUSED uint32_t hash_func_##name##_uint64_t(uint64_t key) \
