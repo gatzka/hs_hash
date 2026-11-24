@@ -58,7 +58,10 @@
  *
  * Please note that in the Linux kernel HS_HASHTABLE_CREATE shall only
  * be called from process context, never from IRQ context, because it
- * allocates memory with GFP_KERNEL.
+ * allocates memory with kvmalloc(GFP_KERNEL). Large tables may come
+ * from vmalloc() and are not physically contiguous then. This requires
+ * Linux 4.12 or newer. HS_HASHTABLE_DELETE must not be called from NMI
+ * context.
  *
  * The typical usage for example is:
  * DECLARE_HS_HASHTABLE_UINT32(CANHARDWARE_HASHTABLE, 13)
@@ -86,8 +89,11 @@
 	#include <linux/string.h>
 	#include <linux/types.h>
 
-	#define HS_HASH_MALLOC(size) kmalloc((size), GFP_KERNEL)
-	#define HS_HASH_FREE(ptr) kfree(ptr)
+	/* kmalloc() can't allocate more than KMALLOC_MAX_SIZE (typically */
+	/* 4 MiB) and large physically contiguous allocations may fail once */
+	/* memory is fragmented. kvmalloc() falls back to vmalloc() then. */
+	#define HS_HASH_MALLOC(size) kvmalloc((size), GFP_KERNEL)
+	#define HS_HASH_FREE(ptr) kvfree(ptr)
 	#define HS_HASH_WMB() wmb()
 #else
 	#include <stdint.h>
@@ -211,6 +217,11 @@ typedef char hs_hash_order_of_##name##_must_be_between_1_and_31[((order) >= 1 &&
 static const uint32_t add_range_##name = ((((uint32_t)1) << ((order) - 1)) < (uint32_t)(HS_HASH_ADD_RANGE)) ? \
 	(((uint32_t)1) << ((order) - 1)) : (uint32_t)(HS_HASH_ADD_RANGE); \
 static const uint32_t table_size_##name = (((uint32_t)1) << (order)); \
+/* Compile time check: the table must fit into the largest object the */ \
+/* compiler supports (half the range of size_t), otherwise the size */ \
+/* passed to HS_HASH_MALLOC wraps around on targets with a small size_t. */ \
+typedef char hs_hash_table_##name##_exceeds_max_object_size[ \
+	((((size_t)-1) >> 1) / sizeof(struct hs_hashtable_##name) >= (((uint32_t)1) << (order))) ? 1 : -1]; \
 \
 static inline uint32_t wrap_pos##name(uint32_t pos) \
 { \
@@ -219,7 +230,7 @@ static inline uint32_t wrap_pos##name(uint32_t pos) \
 \
 static inline struct hs_hashtable_##name *hs_hashtable_create_##name(void) \
 { \
-	struct hs_hashtable_##name *table = (struct hs_hashtable_##name *)HS_HASH_MALLOC(table_size_##name * sizeof(struct hs_hashtable_##name)); \
+	struct hs_hashtable_##name *table = (struct hs_hashtable_##name *)HS_HASH_MALLOC((size_t)table_size_##name * sizeof(struct hs_hashtable_##name)); \
 	if (table != NULL) { \
 		size_t i; \
 		for (i = 0; i < table_size_##name; ++i) { \
