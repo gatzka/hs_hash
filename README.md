@@ -130,5 +130,5 @@ same settings:
 | `HS_HASH_ADD_RANGE` | `1024` | How far PUT searches for a free slot. Bounds the run time of a single PUT. |
 
 In the Linux kernel, the table is always allocated with `kvmalloc()`
-and the write barrier is `wmb()`; only `HS_HASH_ADD_RANGE` can be
+and the write barrier is `smp_wmb()`; only `HS_HASH_ADD_RANGE` can be
 changed there.

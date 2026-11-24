@@ -141,6 +141,7 @@
  *                       after it (default: a release fence).
  */
 #ifdef __KERNEL__
+	#include <asm/barrier.h>
 	#include <linux/mm.h>
 	#include <linux/slab.h>
 	#include <linux/string.h>
@@ -151,7 +152,11 @@
 	/* memory is fragmented. kvmalloc() falls back to vmalloc() then. */
 	#define HS_HASH_MALLOC(size) kvmalloc((size), GFP_KERNEL)
 	#define HS_HASH_FREE(ptr) kvfree(ptr)
-	#define HS_HASH_WMB() wmb()
+	/* Only orders the stores for readers on this CPU, like the release */
+	/* fence used outside the kernel. wmb() would also order them for */
+	/* devices (dsb instead of dmb on ARM), which isn't needed here. On */
+	/* kernels without SMP support, smp_wmb() is a compiler barrier. */
+	#define HS_HASH_WMB() smp_wmb()
 #else
 	#include <stdint.h>
 	#include <stdlib.h>
