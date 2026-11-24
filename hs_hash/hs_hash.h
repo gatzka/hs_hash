@@ -31,7 +31,7 @@
  * the distance to the calculated hash position in a bitmap associated
  * with each hash index. When inserting a key/value pair the algorithm
  * reorders hash table entries so that each entry stays within the
- * maximum distance the bitmap can hold (32 slots, hop_range in this
+ * maximum distance the bitmap can hold (32 slots in this
  * implementation).
  *
  * Usage: a hash table is declared with one of
@@ -288,26 +288,26 @@ static inline int hs_is_equal_uint64_t(uint64_t a, uint64_t b)
 \
 /* Compile time check (C99 compatible): an invalid order gives a negative array size. */ \
 typedef char hs_hash_order_of_##name##_must_be_between_1_and_31[((order) >= 1 && (order) <= 31) ? 1 : -1]; \
-static const uint32_t add_range_##name = ((((uint32_t)1) << ((order) - 1)) < (uint32_t)(HS_HASH_ADD_RANGE)) ? \
+static const uint32_t hs_hash_add_range_##name = ((((uint32_t)1) << ((order) - 1)) < (uint32_t)(HS_HASH_ADD_RANGE)) ? \
 	(((uint32_t)1) << ((order) - 1)) : (uint32_t)(HS_HASH_ADD_RANGE); \
-static const uint32_t table_size_##name = (((uint32_t)1) << (order)); \
+static const uint32_t hs_hash_table_size_##name = (((uint32_t)1) << (order)); \
 /* Compile time check: the table must fit into the largest object the */ \
 /* compiler supports (half the range of size_t), otherwise the size */ \
 /* passed to HS_HASH_MALLOC wraps around on targets with a small size_t. */ \
 typedef char hs_hash_table_##name##_exceeds_max_object_size[ \
 	((((size_t)-1) >> 1) / sizeof(struct hs_hashtable_##name) >= (((uint32_t)1) << (order))) ? 1 : -1]; \
 \
-static inline HS_HASH_UNUSED uint32_t wrap_pos##name(uint32_t pos) \
+static inline HS_HASH_UNUSED uint32_t hs_hash_wrap_pos_##name(uint32_t pos) \
 { \
-	return pos & (table_size_##name - 1); \
+	return pos & (hs_hash_table_size_##name - 1); \
 } \
 \
 static inline HS_HASH_UNUSED struct hs_hashtable_##name *hs_hashtable_create_##name(void) \
 { \
-	struct hs_hashtable_##name *table = (struct hs_hashtable_##name *)HS_HASH_MALLOC((size_t)table_size_##name * sizeof(struct hs_hashtable_##name)); \
+	struct hs_hashtable_##name *table = (struct hs_hashtable_##name *)HS_HASH_MALLOC((size_t)hs_hash_table_size_##name * sizeof(struct hs_hashtable_##name)); \
 	if (table != NULL) { \
 		size_t i; \
-		for (i = 0; i < table_size_##name; ++i) { \
+		for (i = 0; i < hs_hash_table_size_##name; ++i) { \
 			memset(&table[i], 0, sizeof(table[0])); \
 			table[i].key = (type)HS_HASHTABLE_INVALIDENTRY; \
 		} \
@@ -323,7 +323,7 @@ static inline HS_HASH_UNUSED void hs_hashtable_delete_##name(struct hs_hashtable
 \
 static inline HS_HASH_UNUSED int hs_hashtable_get_##name(struct hs_hashtable_##name *table, type key, struct value_##name *value) \
 { \
-	uint32_t hash_pos = hash_func_##name##_##type_name(key); \
+	uint32_t hash_pos = hs_hash_func_##name##_##type_name(key); \
 	uint32_t pos = hash_pos; \
 	uint32_t hop_info = table[hash_pos].hop_info; \
 	while (hop_info != 0) { \
@@ -334,28 +334,28 @@ static inline HS_HASH_UNUSED int hs_hashtable_get_##name(struct hs_hashtable_##n
 			return HS_HASHTABLE_SUCCESS; \
 		} \
 		hop_info = hop_info >> 1; \
-		pos = wrap_pos##name(pos + 1); \
+		pos = hs_hash_wrap_pos_##name(pos + 1); \
 	} \
 	return HS_HASHTABLE_NOTFOUND; \
 } \
 \
-static inline HS_HASH_UNUSED uint32_t hop_range_##name(void) \
+static inline HS_HASH_UNUSED uint32_t hs_hash_hop_range_##name(void) \
 { \
 	return sizeof(((struct hs_hashtable_##name*)0)->hop_info) * 8; \
 }\
 \
-static inline HS_HASH_UNUSED uint32_t find_closer_entry_##name(struct hs_hashtable_##name *table, uint32_t free_position) \
+static inline HS_HASH_UNUSED uint32_t hs_hash_find_closer_entry_##name(struct hs_hashtable_##name *table, uint32_t free_position) \
 { \
-	uint32_t check_distance = (hop_range_##name() - 1); \
+	uint32_t check_distance = (hs_hash_hop_range_##name() - 1); \
 	while (check_distance > 0) { \
 		unsigned int i; \
-		uint32_t check_position = wrap_pos##name(free_position - check_distance); \
+		uint32_t check_position = hs_hash_wrap_pos_##name(free_position - check_distance); \
 		uint32_t check_hop_info = table[check_position].hop_info; \
 		uint32_t mask = 1; \
 		uint32_t hop_position = 0xffffffff; \
 		for (i = 0; i < check_distance; ++i) { \
 			if ((mask & check_hop_info) != 0) { \
-				hop_position = wrap_pos##name(check_position + i); \
+				hop_position = hs_hash_wrap_pos_##name(check_position + i); \
 				break; \
 			} \
 			mask = mask << 1; \
@@ -401,7 +401,7 @@ static inline HS_HASH_UNUSED int hs_hashtable_put_##name(struct hs_hashtable_##n
 	} \
 \
 /* Look if the key is already in the table. */ \
-	hash_pos = hash_func_##name##_##type_name(key); \
+	hash_pos = hs_hash_func_##name##_##type_name(key); \
 	pos = hash_pos; \
 	hop_info = table[hash_pos].hop_info; \
 	while (hop_info != 0) { \
@@ -412,7 +412,7 @@ static inline HS_HASH_UNUSED int hs_hashtable_put_##name(struct hs_hashtable_##n
 			break; \
 		} \
 		hop_info = hop_info >> 1; \
-		pos = wrap_pos##name(pos + 1); \
+		pos = hs_hash_wrap_pos_##name(pos + 1); \
 	} \
 \
 /* Write the entry to a free slot. This is also done if the key is */ \
@@ -420,20 +420,20 @@ static inline HS_HASH_UNUSED int hs_hashtable_put_##name(struct hs_hashtable_##n
 /* hop_info bits are switched over afterwards (and back, see below). */ \
 /* Overwriting the value in place would let an interrupting */ \
 /* HS_HASHTABLE_GET read a mix of the old and the new value. */ \
-/* Make linear search from hash_pos to add_range_##name to find an empty table entry. */ \
+/* Make linear search from hash_pos to hs_hash_add_range_##name to find an empty table entry. */ \
 	free_distance = 0; \
 	pos = hash_pos; \
-	while (free_distance < add_range_##name) { \
+	while (free_distance < hs_hash_add_range_##name) { \
 		if (table[pos].key == (type)HS_HASHTABLE_INVALIDENTRY) { \
 			break; \
 		} \
 		++free_distance; \
-		pos = wrap_pos##name(pos + 1); \
+		pos = hs_hash_wrap_pos_##name(pos + 1); \
 	} \
 	free_pos = pos; \
-	if (free_distance < add_range_##name) { \
+	if (free_distance < hs_hash_add_range_##name) { \
 		for (;;) { \
-			if (free_distance < hop_range_##name()) { \
+			if (free_distance < hs_hash_hop_range_##name()) { \
 				table[free_pos].value = value; \
 				table[free_pos].key = key; \
 				HS_HASH_WMB(); \
@@ -445,7 +445,7 @@ static inline HS_HASH_UNUSED int hs_hashtable_put_##name(struct hs_hashtable_##n
 /* Unpublish the old one with a separate store, so each hop_info store */ \
 /* changes a single bit. Then readers never miss the key, even on CPUs */ \
 /* that store a uint32_t in several parts. */ \
-					old_distance = wrap_pos##name(old_pos - hash_pos); \
+					old_distance = hs_hash_wrap_pos_##name(old_pos - hash_pos); \
 					HS_HASH_WMB(); \
 					hop_info = hop_info & ~(((uint32_t)1) << old_distance); \
 					table[hash_pos].hop_info = hop_info; \
@@ -474,7 +474,7 @@ static inline HS_HASH_UNUSED int hs_hashtable_put_##name(struct hs_hashtable_##n
 				return HS_HASHTABLE_SUCCESS; \
 			} \
 /* Now we must try to swap some entries */ \
-			closer_pos = find_closer_entry_##name(table, free_pos); \
+			closer_pos = hs_hash_find_closer_entry_##name(table, free_pos); \
 			if (closer_pos == 0xffffffff) { \
 /* Nothing can be moved into free_pos. If free_pos was vacated by an */ \
 /* earlier move, it still holds a stale copy of the moved entry. Mark it */ \
@@ -489,7 +489,7 @@ static inline HS_HASH_UNUSED int hs_hashtable_put_##name(struct hs_hashtable_##n
 				old_pos = free_pos; \
 			} \
 			free_pos = closer_pos; \
-			free_distance = wrap_pos##name(free_pos - hash_pos); \
+			free_distance = hs_hash_wrap_pos_##name(free_pos - hash_pos); \
 		} \
 	} \
 	return HS_HASHTABLE_FULL; \
@@ -497,7 +497,7 @@ static inline HS_HASH_UNUSED int hs_hashtable_put_##name(struct hs_hashtable_##n
 \
 static inline HS_HASH_UNUSED int hs_hashtable_remove_##name(struct hs_hashtable_##name *table, type key, struct value_##name *value) \
 { \
-	uint32_t hash_pos = hash_func_##name##_##type_name(key); \
+	uint32_t hash_pos = hs_hash_func_##name##_##type_name(key); \
 	uint32_t pos = hash_pos; \
 	uint32_t hop_info = table[hash_pos].hop_info; \
 	uint32_t check_hop_info = hop_info; \
@@ -507,7 +507,7 @@ static inline HS_HASH_UNUSED int hs_hashtable_remove_##name(struct hs_hashtable_
 			if (value != NULL) { \
 				*value = table[pos].value; \
 			} \
-			distance = wrap_pos##name(pos - hash_pos); \
+			distance = hs_hash_wrap_pos_##name(pos - hash_pos); \
 /* Unpublish the entry before invalidating it. Otherwise a reader might */ \
 /* follow a still set hop_info bit to an invalidated key (which crashes */ \
 /* strcmp() for string tables). */ \
@@ -518,7 +518,7 @@ static inline HS_HASH_UNUSED int hs_hashtable_remove_##name(struct hs_hashtable_
 			return HS_HASHTABLE_SUCCESS; \
 		} \
 		check_hop_info = check_hop_info >> 1; \
-		pos = wrap_pos##name(pos + 1); \
+		pos = hs_hash_wrap_pos_##name(pos + 1); \
 	} \
 	return HS_HASHTABLE_NOTFOUND; \
 }
@@ -534,7 +534,7 @@ struct hs_hashtable_##name { \
 	uint32_t hop_info; \
 	struct value_##name value; \
 }; \
-static inline HS_HASH_UNUSED uint32_t hash_func_##name##_string(const char* key) \
+static inline HS_HASH_UNUSED uint32_t hs_hash_func_##name##_string(const char* key) \
 { \
 	uint32_t hash = 0; \
 	uint32_t c = *key; \
@@ -559,7 +559,7 @@ struct hs_hashtable_##name { \
 	uint32_t hop_info; \
 	struct value_##name value; \
 }; \
-static inline HS_HASH_UNUSED uint32_t hash_func_##name##_uint32_t(uint32_t key) \
+static inline HS_HASH_UNUSED uint32_t hs_hash_func_##name##_uint32_t(uint32_t key) \
 { \
 	return hs_hash32(key, order); \
 } \
@@ -579,7 +579,7 @@ struct hs_hashtable_##name { \
 	uint32_t hop_info; \
 	struct value_##name value; \
 }; \
-static inline HS_HASH_UNUSED uint32_t hash_func_##name##_uint64_t(uint64_t key) \
+static inline HS_HASH_UNUSED uint32_t hs_hash_func_##name##_uint64_t(uint64_t key) \
 { \
 	return hs_hash6432shift(key, order); \
 } \
