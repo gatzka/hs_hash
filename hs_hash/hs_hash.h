@@ -48,9 +48,9 @@
  * HS_HASHTABLE_REMOVE and HS_HASHTABLE_PUT.
  * Do not call the other functions directly.
  *
- * Please note that HS_HASHTABLE_CREATE shall only called from Linux
- * context, never from IRQ context because it allocates memory with
- * GFP_KERNEL.
+ * Please note that in the Linux kernel HS_HASHTABLE_CREATE shall only
+ * be called from process context, never from IRQ context, because it
+ * allocates memory with GFP_KERNEL.
  *
  * The typical usage for example is:
  * DECLARE_HS_HASHTABLE_UINT32(CANHARDWARE_HASHTABLE, 13)
@@ -62,35 +62,55 @@
 #ifndef HS_HASHTABLE_H
 #define HS_HASHTABLE_H
 
-#ifdef __linux__
-	#ifdef __KERNEL__
-		#include <linux/mm.h>
-		#include <linux/slab.h>
-		#include <linux/string.h>
-		#include <linux/types.h>
-	#else
-		#include <stdint.h>
-		#include <stdlib.h>
-		#include <string.h>
+/*
+ * Platform abstraction. Outside the Linux kernel, the following macros
+ * can be defined before including this file to replace the defaults:
+ *
+ * HS_HASH_MALLOC(size): allocates the hash table (default: malloc).
+ * HS_HASH_FREE(ptr):    frees the hash table (default: free).
+ * HS_HASH_WMB():        write barrier that keeps all stores issued
+ *                       before it ordered before all stores issued
+ *                       after it (default: a release fence).
+ */
+#ifdef __KERNEL__
+	#include <linux/mm.h>
+	#include <linux/slab.h>
+	#include <linux/string.h>
+	#include <linux/types.h>
 
-		#define GFP_KERNEL 1
-
-		#define kmalloc(size, priority) malloc(size)
-		#define kfree(__ptr) free(__ptr)
-		#define wmb() MemoryBarrier()
-	#endif
-#elif _WIN32
+	#define HS_HASH_MALLOC(size) kmalloc((size), GFP_KERNEL)
+	#define HS_HASH_FREE(ptr) kfree(ptr)
+	#define HS_HASH_WMB() wmb()
+#else
 	#include <stdint.h>
 	#include <stdlib.h>
 	#include <string.h>
 
-	#define GFP_KERNEL 1
+	#ifndef HS_HASH_MALLOC
+		#define HS_HASH_MALLOC(size) malloc(size)
+	#endif
 
-	#define kmalloc(size, priority) malloc(size)
-	#define kfree(__ptr) free(__ptr)
-	#define wmb() __sync_synchronize()
-#else
-	#error "Unsupported operating system!"
+	#ifndef HS_HASH_FREE
+		#define HS_HASH_FREE(ptr) free(ptr)
+	#endif
+
+	#ifndef HS_HASH_WMB
+		#if defined(__GNUC__) || defined(__clang__)
+			#define HS_HASH_WMB() __atomic_thread_fence(__ATOMIC_RELEASE)
+		#elif defined(_MSC_VER)
+			#include <intrin.h>
+			#if defined(_M_ARM64)
+				#define HS_HASH_WMB() __dmb(_ARM64_BARRIER_ISHST)
+			#elif defined(_M_ARM)
+				#define HS_HASH_WMB() __dmb(_ARM_BARRIER_ISHST)
+			#else
+				/* x86 and x64 never reorder stores with other stores. */
+				#define HS_HASH_WMB() _ReadWriteBarrier()
+			#endif
+		#else
+			#error "hs_hash: no write barrier known for this compiler, please define HS_HASH_WMB()"
+		#endif
+	#endif
 #endif
 
 #define HS_HASHTABLE_SUCCESS 0
@@ -145,7 +165,7 @@ static inline uint32_t wrap_pos##name(uint32_t pos) \
 \
 static inline struct hashtable_##type_name *hs_hashtable_create_##name(void) \
 { \
-	struct hashtable_##type_name *table = (struct hashtable_##type_name *)kmalloc(table_size_##name * sizeof(struct hashtable_##type_name), GFP_KERNEL) ; \
+	struct hashtable_##type_name *table = (struct hashtable_##type_name *)HS_HASH_MALLOC(table_size_##name * sizeof(struct hashtable_##type_name)); \
 	if (table != NULL) { \
 		size_t i; \
 		for (i = 0; i < table_size_##name; ++i) { \
@@ -158,7 +178,7 @@ static inline struct hashtable_##type_name *hs_hashtable_create_##name(void) \
 \
 static inline void hs_hashtable_delete_##name(struct hashtable_##type_name *table) \
 { \
-	kfree(table); \
+	HS_HASH_FREE(table); \
 	return; \
 } \
 \
@@ -203,12 +223,12 @@ static inline uint32_t find_closer_entry_##name(struct hashtable_##type_name *ta
 /* We found a table entry to swap the free entry with. */ \
 			table[free_position].key = table[hop_position].key; \
 			table[free_position].value = table[hop_position].value; \
-			wmb(); \
+			HS_HASH_WMB(); \
 			check_hop_info = check_hop_info & ~(mask); \
 			check_hop_info = check_hop_info | (1 << check_distance); \
 			table[check_position].hop_info = check_hop_info; \
 /* hop_position is no longer referenced. Make sure that is visible before the slot gets reused. */ \
-			wmb(); \
+			HS_HASH_WMB(); \
 			return hop_position ;\
 		} \
 		--check_distance; \
@@ -264,7 +284,7 @@ static inline int hs_hashtable_put_##name(struct hashtable_##type_name *table, t
 			if (free_distance < hop_range_##name()) { \
 				table[free_pos].value = value; \
 				table[free_pos].key = key; \
-				wmb(); \
+				HS_HASH_WMB(); \
 				hop_info = table[hash_pos].hop_info; \
 				hop_info = hop_info | (1 << free_distance); \
 				table[hash_pos].hop_info = hop_info; \
@@ -301,7 +321,7 @@ static inline int hs_hashtable_remove_##name(struct hashtable_##type_name *table
 				*value = table[pos].value; \
 			} \
 			table[pos].key = (type)HS_HASHTABLE_INVALIDENTRY; \
-			wmb(); \
+			HS_HASH_WMB(); \
 			memset(&table[pos].value, 0, sizeof(table[pos].value)); \
 			distance = wrap_pos##name(pos - hash_pos); \
 			table[hash_pos].hop_info = hop_info & ~(1 << distance); \
