@@ -498,8 +498,10 @@ DECLARE_HS_HASHTABLE(name, order, uint64_t, uint64_t, value_entries)
  * Destroys a hash table.
  */
 #define HS_HASHTABLE_DELETE(name, table) \
-	hs_hashtable_delete_##name((table)); \
-	table = NULL
+	do { \
+		hs_hashtable_delete_##name((table)); \
+		(table) = NULL; \
+	} while (0)
 
 /*
  * Maps the key to the value in table. Return values:
