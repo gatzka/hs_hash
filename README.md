@@ -132,3 +132,36 @@ same settings:
 In the Linux kernel, the table is always allocated with `kvmalloc()`
 and the write barrier is `smp_wmb()`; only `HS_HASH_ADD_RANGE` can be
 changed there.
+
+## Tests
+
+The tests are built if hs\_hash is the top-level CMake project, or if
+`HS_HASH_BUILD_TESTS` is `ON`:
+
+```sh
+cmake -S . -B build -DHS_HASH_SANITIZE=ON
+cmake --build build
+cd build && ctest --output-on-failure
+```
+
+| Test | What it checks |
+|---|---|
+| `unit` | All operations for all key types, updates, return values, the search range, and that tables can be filled to 75%. |
+| `override`, `shared_table` | Replacing `HS_HASH_MALLOC`, `HS_HASH_FREE` and `HS_HASH_WMB`, and a table used by two source files. |
+| `readme_example`, `header_example` | The usage examples of this file and of `hs_hash/hs_hash.h` compile and run. |
+| `fuzz_*` | Random operations, checked against a reference model and the table invariants. At every write barrier, a simulated interrupt looks up all keys. |
+| `fuzz_split_*` | The same, with every `hop_info` store split into 8 or 16 bit pieces, like on small CPUs. |
+| `irq_signal` | Real asynchronous interrupts (POSIX signals) while the table is updated. |
+| `compile_fail_*` | Invalid declarations are rejected at compile time. |
+
+CMake options for the tests:
+
+| Option | Default | Purpose |
+|---|---|---|
+| `HS_HASH_BUILD_TESTS` | `ON` if top level | Build the tests. |
+| `HS_HASH_SANITIZE` | `OFF` | Build with AddressSanitizer and UndefinedBehaviorSanitizer (GCC and Clang). |
+| `HS_HASH_WARNINGS_AS_ERRORS` | `OFF` | Treat warnings as errors. |
+
+The CI also builds the tests with MSVC, compiles the header for
+Cortex-M, MinGW and as C++, and builds `tests/kernel` as a Linux kernel
+module.

@@ -48,3 +48,11 @@ if(HS_HASH_INSTALL)
         DESTINATION ${HS_HASH_CMAKE_DIR}
     )
 endif()
+
+# Like the install rules, the tests are only built by default if hs_hash
+# is the top level project.
+option(HS_HASH_BUILD_TESTS "Build the hs_hash tests" ${HS_HASH_IS_TOP_LEVEL})
+if(HS_HASH_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
