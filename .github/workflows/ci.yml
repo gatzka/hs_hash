@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Configure
-        run: cmake -S . -B build -A ${{ matrix.arch }}
+        run: cmake -S . -B build -A ${{ matrix.arch }} -DHS_HASH_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: cmake --build build --config Release --parallel
       # ARM64 is cross compiled and can't run on the x64 runner.
