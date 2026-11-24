@@ -8,10 +8,13 @@ The implementation is focused to be used in small microcontroller based
 systems or the Linux kernel. Resizing of the hashmap is not implemented,
 so you can't change the size after declaring the hashtable.
 
-One of the major advantages is that you can make HS\_HASHTABLE\_GET
-operations ans concurrently HS\_HASHTABLE\_REMOVE and HS\_HASHTABLE\_PUT
-operations, so the GET operation might be interrupted by PUT and/or
-REMOVE.
+One of the major advantages is that HS\_HASHTABLE\_GET can be called
+while an HS\_HASHTABLE\_PUT or HS\_HASHTABLE\_REMOVE operation is in
+progress, for example from an interrupt handler that interrupts the
+writer. The opposite is not supported: a GET must not be interrupted by
+PUT or REMOVE, and readers must run on the same CPU as the writer.
+Concurrent PUT and REMOVE calls must be serialized by the caller. See
+the comment at the top of `hs_hash/hs_hash.h` for details.
 
 Three different key types are supported:
 - uint32_t

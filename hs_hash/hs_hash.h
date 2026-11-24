@@ -33,11 +33,19 @@
  * tries to reorder hash table entries that each entry is in the maximum
  * distance the bitmap can contain. (hop_range in this implementation).
  *
- * This implementation is lock free but only ensure the following
- * condition. Every HS_HASHTABLE_REMOVE or HS_HASHTABLE_PUT call can be
- * interrupted at any time by a call to HS_HASHTABLE_GET. Because
- * HS_HASHTABLE_GET does not alter the hash table, concurrent calls to
- * HS_HASHTABLE_GET are also allowed.
+ * Concurrency: the hash table supports one writer and readers that
+ * interrupt the writer. Every HS_HASHTABLE_PUT or HS_HASHTABLE_REMOVE
+ * call can be interrupted at any time by HS_HASHTABLE_GET calls, e.g.
+ * from an interrupt handler. Because HS_HASHTABLE_GET does not alter the
+ * hash table, concurrent calls to HS_HASHTABLE_GET are also allowed.
+ *
+ * The opposite is NOT supported: an HS_HASHTABLE_GET call must not be
+ * interrupted by HS_HASHTABLE_PUT or HS_HASHTABLE_REMOVE. While the GET
+ * is suspended, the writer might move or remove entries, so the GET
+ * might report a present key as not found. For string tables it might
+ * also access a key string that was removed and freed in the meantime.
+ * For the same reason, readers must run on the same CPU as the writer,
+ * not in parallel on another CPU.
  *
  * Please be aware that concurrent calls to HS_HASHTABLE_REMOVE or
  * HS_HASHTABLE_PUT are not allowed and must be synchronized elsewhere.
@@ -139,9 +147,17 @@ static inline uint32_t hs_hash6432shift(uint64_t key, unsigned int order)
 	return ((uint32_t)key) >> (32 - (order));
 }
 
+/*
+ * s1 is the key stored in the table, s2 the key searched for. Within the
+ * supported concurrency model, s1 is never HS_HASHTABLE_INVALIDENTRY.
+ * The check is a safety net for an HS_HASHTABLE_GET that is (wrongly)
+ * interrupted by the writer and then follows its stale hop_info to a
+ * slot that was invalidated meanwhile: report "not equal" instead of
+ * calling strcmp() on an invalid pointer.
+ */
 static inline int hs_is_equal_string(const char *s1, const char *s2)
 {
-	return !strcmp(s1, s2);
+	return (s1 != (const char *)HS_HASHTABLE_INVALIDENTRY) && !strcmp(s1, s2);
 }
 
 static inline int hs_is_equal_uint32_t(uint32_t a, uint32_t b)
@@ -203,7 +219,9 @@ static inline int hs_hashtable_get_##name(struct hs_hashtable_##name *table, typ
 	uint32_t pos = hash_pos; \
 	uint32_t hop_info = table[hash_pos].hop_info; \
 	while (hop_info != 0) { \
-		if (((hop_info & 0x1) == 1) && (hs_is_equal_##type_name(table[pos].key, key))) { \
+/* Read the stored key exactly once (volatile), so the comparison */ \
+/* checks and uses the very same value even if the writer changes it. */ \
+		if (((hop_info & 0x1) == 1) && (hs_is_equal_##type_name(*(type const volatile *)&table[pos].key, key))) { \
 			*value = table[pos].value; \
 			return HS_HASHTABLE_SUCCESS; \
 		} \
