@@ -121,10 +121,18 @@
 	#endif
 #endif
 
+/* Return values. */
 #define HS_HASHTABLE_SUCCESS 0
-#define HS_HASHTABLE_FULL -1
-#define HS_HASHTABLE_KEYINVAL -2
-#define HS_HASHTABLE_INVALIDENTRY	-1
+/* GET, REMOVE: the key is not in the table. Same value as */
+/* HS_HASHTABLE_INVALIDENTRY, which GET and REMOVE returned before. */
+#define HS_HASHTABLE_NOTFOUND (-1)
+/* PUT: the key is HS_HASHTABLE_INVALIDENTRY, which can't be stored. */
+#define HS_HASHTABLE_KEYINVAL (-2)
+/* PUT: no free slot near the key's bucket. */
+#define HS_HASHTABLE_FULL (-3)
+
+/* Key value that marks an empty slot. It can't be used as a key. */
+#define HS_HASHTABLE_INVALIDENTRY (-1)
 
 static inline uint32_t hs_hash32(uint32_t key, unsigned int order)
 {
@@ -230,7 +238,7 @@ static inline int hs_hashtable_get_##name(struct hs_hashtable_##name *table, typ
 		hop_info = hop_info >> 1; \
 		pos = wrap_pos##name(pos + 1); \
 	} \
-	return HS_HASHTABLE_INVALIDENTRY; \
+	return HS_HASHTABLE_NOTFOUND; \
 } \
 \
 static inline uint32_t hop_range_##name(void) \
@@ -414,7 +422,7 @@ static inline int hs_hashtable_remove_##name(struct hs_hashtable_##name *table, 
 		check_hop_info = check_hop_info >> 1; \
 		pos = wrap_pos##name(pos + 1); \
 	} \
-	return HS_HASHTABLE_INVALIDENTRY; \
+	return HS_HASHTABLE_NOTFOUND; \
 }
 
 
@@ -520,15 +528,18 @@ DECLARE_HS_HASHTABLE(name, order, uint64_t, uint64_t, value_entries)
 	hs_hashtable_put_##name((table), (key), (value), (prev_value))
 
 /*
- * Returns the value stored for key or NULL if no value was found for
- * key.
+ * Looks up key in table. Return values:
+ * HS_HASHTABLE_SUCCESS: key was found, its value is assigned to value.
+ * HS_HASHTABLE_NOTFOUND: key is not in the table, value is unchanged.
  */
 #define HS_HASHTABLE_GET(name, table, key, value) \
 	hs_hashtable_get_##name((table), (key), (value))
 
 /*
- * Removes a key/value pair from table. If a value was found for
- * key, it will be returned, NULL otherwise.
+ * Removes key and its value from table. Return values:
+ * HS_HASHTABLE_SUCCESS: key was removed. If value != NULL, the removed
+ *                       value is assigned to value.
+ * HS_HASHTABLE_NOTFOUND: key is not in the table, value is unchanged.
  */
 #define HS_HASHTABLE_REMOVE(name, table, key, value) \
 	hs_hashtable_remove_##name((table), (key), (value))
