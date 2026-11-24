@@ -121,6 +121,18 @@
 	#endif
 #endif
 
+/*
+ * HS_HASH_ADD_RANGE: how far from a key's bucket PUT searches for a free
+ * slot (at most half the table size). This bounds the time a single PUT
+ * can take. Define it before including this file to change the default.
+ */
+#ifndef HS_HASH_ADD_RANGE
+	#define HS_HASH_ADD_RANGE 1024
+#endif
+#if (HS_HASH_ADD_RANGE) < 1
+	#error "hs_hash: HS_HASH_ADD_RANGE must be at least 1"
+#endif
+
 /* Return values. */
 #define HS_HASHTABLE_SUCCESS 0
 /* GET, REMOVE: the key is not in the table. Same value as */
@@ -196,7 +208,8 @@ static inline int hs_is_equal_uint64_t(uint64_t a, uint64_t b)
 \
 /* Compile time check (C99 compatible): an invalid order gives a negative array size. */ \
 typedef char hs_hash_order_of_##name##_must_be_between_1_and_31[((order) >= 1 && (order) <= 31) ? 1 : -1]; \
-static const uint32_t add_range_##name = (((uint32_t)1) << ((order) - 1)); \
+static const uint32_t add_range_##name = ((((uint32_t)1) << ((order) - 1)) < (uint32_t)(HS_HASH_ADD_RANGE)) ? \
+	(((uint32_t)1) << ((order) - 1)) : (uint32_t)(HS_HASH_ADD_RANGE); \
 static const uint32_t table_size_##name = (((uint32_t)1) << (order)); \
 \
 static inline uint32_t wrap_pos##name(uint32_t pos) \
