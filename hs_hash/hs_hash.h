@@ -186,8 +186,10 @@ static inline int hs_is_equal_uint64_t(uint64_t a, uint64_t b)
  */
 #define DECLARE_HS_HASHTABLE(name, order, type_name, type, value_entries) \
 \
-static const uint32_t add_range_##name = (1 << (order - 1)); \
-static const uint32_t table_size_##name = (1 << (order)); \
+/* Compile time check (C99 compatible): an invalid order gives a negative array size. */ \
+typedef char hs_hash_order_of_##name##_must_be_between_1_and_31[((order) >= 1 && (order) <= 31) ? 1 : -1]; \
+static const uint32_t add_range_##name = (((uint32_t)1) << ((order) - 1)); \
+static const uint32_t table_size_##name = (((uint32_t)1) << (order)); \
 \
 static inline uint32_t wrap_pos##name(uint32_t pos) \
 { \
@@ -258,7 +260,7 @@ static inline uint32_t find_closer_entry_##name(struct hs_hashtable_##name *tabl
 			table[free_position].value = table[hop_position].value; \
 			HS_HASH_WMB(); \
 			check_hop_info = check_hop_info & ~(mask); \
-			check_hop_info = check_hop_info | (1 << check_distance); \
+			check_hop_info = check_hop_info | (((uint32_t)1) << check_distance); \
 			table[check_position].hop_info = check_hop_info; \
 /* hop_position is no longer referenced. Make sure that is visible before the slot gets reused. */ \
 			HS_HASH_WMB(); \
@@ -319,7 +321,7 @@ static inline int hs_hashtable_put_##name(struct hs_hashtable_##name *table, typ
 				table[free_pos].key = key; \
 				HS_HASH_WMB(); \
 				hop_info = table[hash_pos].hop_info; \
-				hop_info = hop_info | (1 << free_distance); \
+				hop_info = hop_info | (((uint32_t)1) << free_distance); \
 				table[hash_pos].hop_info = hop_info; \
 				return HS_HASHTABLE_SUCCESS; \
 			} \
@@ -357,7 +359,7 @@ static inline int hs_hashtable_remove_##name(struct hs_hashtable_##name *table, 
 /* Unpublish the entry before invalidating it. Otherwise a reader might */ \
 /* follow a still set hop_info bit to an invalidated key (which crashes */ \
 /* strcmp() for string tables). */ \
-			table[hash_pos].hop_info = hop_info & ~(1 << distance); \
+			table[hash_pos].hop_info = hop_info & ~(((uint32_t)1) << distance); \
 			HS_HASH_WMB(); \
 			table[pos].key = (type)HS_HASHTABLE_INVALIDENTRY; \
 			memset(&table[pos].value, 0, sizeof(table[pos].value)); \
