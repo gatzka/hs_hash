@@ -44,9 +44,9 @@
  *
  * Please use only the macros DECLARE_HS_HASHTABLE_STRING,
  * DECLARE_HS_HASHTABLE_UINT32, DECLARE_HS_HASHTABLE_UINT64,
- * HS_HASHTABLE_CREATE, HS_HASHTABLE_DELETE, HS_HASHTABLE_GET,
- * HS_HASHTABLE_REMOVE and HS_HASHTABLE_PUT.
- * Do not call the other functions directly.
+ * HS_HASHTABLE_TYPE, HS_HASHTABLE_CREATE, HS_HASHTABLE_DELETE,
+ * HS_HASHTABLE_GET, HS_HASHTABLE_REMOVE and HS_HASHTABLE_PUT.
+ * Do not call the other functions or use the other types directly.
  *
  * Please note that in the Linux kernel HS_HASHTABLE_CREATE shall only
  * be called from process context, never from IRQ context, because it
@@ -139,6 +139,21 @@ static inline uint32_t hs_hash6432shift(uint64_t key, unsigned int order)
 	return ((uint32_t)key) >> (32 - (order));
 }
 
+static inline int hs_is_equal_string(const char *s1, const char *s2)
+{
+	return !strcmp(s1, s2);
+}
+
+static inline int hs_is_equal_uint32_t(uint32_t a, uint32_t b)
+{
+	return a == b;
+}
+
+static inline int hs_is_equal_uint64_t(uint64_t a, uint64_t b)
+{
+	return a == b;
+}
+
 /*
  * Declares a hash table of name "name" and size 2^order. This macro is
  * just for internal use. Do not use it to declare a hash table, use
@@ -163,9 +178,9 @@ static inline uint32_t wrap_pos##name(uint32_t pos) \
 	return pos & (table_size_##name - 1); \
 } \
 \
-static inline struct hashtable_##type_name *hs_hashtable_create_##name(void) \
+static inline struct hs_hashtable_##name *hs_hashtable_create_##name(void) \
 { \
-	struct hashtable_##type_name *table = (struct hashtable_##type_name *)HS_HASH_MALLOC(table_size_##name * sizeof(struct hashtable_##type_name)); \
+	struct hs_hashtable_##name *table = (struct hs_hashtable_##name *)HS_HASH_MALLOC(table_size_##name * sizeof(struct hs_hashtable_##name)); \
 	if (table != NULL) { \
 		size_t i; \
 		for (i = 0; i < table_size_##name; ++i) { \
@@ -176,19 +191,19 @@ static inline struct hashtable_##type_name *hs_hashtable_create_##name(void) \
 	return table; \
 } \
 \
-static inline void hs_hashtable_delete_##name(struct hashtable_##type_name *table) \
+static inline void hs_hashtable_delete_##name(struct hs_hashtable_##name *table) \
 { \
 	HS_HASH_FREE(table); \
 	return; \
 } \
 \
-static inline int hs_hashtable_get_##name(struct hashtable_##type_name *table, type key, struct value_##name *value) \
+static inline int hs_hashtable_get_##name(struct hs_hashtable_##name *table, type key, struct value_##name *value) \
 { \
 	uint32_t hash_pos = hash_func_##name##_##type_name(key); \
 	uint32_t pos = hash_pos; \
 	uint32_t hop_info = table[hash_pos].hop_info; \
 	while (hop_info != 0) { \
-		if (((hop_info & 0x1) == 1) && (is_equal_##type_name(table[pos].key, key))) { \
+		if (((hop_info & 0x1) == 1) && (hs_is_equal_##type_name(table[pos].key, key))) { \
 			*value = table[pos].value; \
 			return HS_HASHTABLE_SUCCESS; \
 		} \
@@ -200,10 +215,10 @@ static inline int hs_hashtable_get_##name(struct hashtable_##type_name *table, t
 \
 static inline uint32_t hop_range_##name(void) \
 { \
-	return sizeof(((struct hashtable_##type_name*)0)->hop_info) * 8; \
+	return sizeof(((struct hs_hashtable_##name*)0)->hop_info) * 8; \
 }\
 \
-static inline uint32_t find_closer_entry_##name(struct hashtable_##type_name *table, uint32_t free_position) \
+static inline uint32_t find_closer_entry_##name(struct hs_hashtable_##name *table, uint32_t free_position) \
 { \
 	uint32_t check_distance = (hop_range_##name() - 1); \
 	while (check_distance > 0) { \
@@ -236,7 +251,7 @@ static inline uint32_t find_closer_entry_##name(struct hashtable_##type_name *ta
 	return 0xffffffff; \
 } \
 \
-static inline int hs_hashtable_put_##name(struct hashtable_##type_name *table, type key, struct value_##name value, struct value_##name *prev_value) \
+static inline int hs_hashtable_put_##name(struct hs_hashtable_##name *table, type key, struct value_##name value, struct value_##name *prev_value) \
 { \
 	uint32_t hash_pos; \
 	uint32_t pos; \
@@ -256,7 +271,7 @@ static inline int hs_hashtable_put_##name(struct hashtable_##type_name *table, t
 	pos = hash_pos; \
 	hop_info = table[hash_pos].hop_info; \
 	while (hop_info != 0) { \
-		if (((hop_info & 0x1) == 1) && (is_equal_##type_name(table[pos].key, key))) { \
+		if (((hop_info & 0x1) == 1) && (hs_is_equal_##type_name(table[pos].key, key))) { \
 			if (prev_value != NULL) { \
 				*prev_value = table[pos].value; \
 			} \
@@ -308,14 +323,14 @@ static inline int hs_hashtable_put_##name(struct hashtable_##type_name *table, t
 	return HS_HASHTABLE_FULL; \
 } \
 \
-static inline int hs_hashtable_remove_##name(struct hashtable_##type_name *table, type key, struct value_##name *value) \
+static inline int hs_hashtable_remove_##name(struct hs_hashtable_##name *table, type key, struct value_##name *value) \
 { \
 	uint32_t hash_pos = hash_func_##name##_##type_name(key); \
 	uint32_t pos = hash_pos; \
 	uint32_t hop_info = table[hash_pos].hop_info; \
 	uint32_t check_hop_info = hop_info; \
 	while (check_hop_info != 0) { \
-		if (((check_hop_info & 0x1) == 1) && (is_equal_##type_name(table[pos].key, key))) { \
+		if (((check_hop_info & 0x1) == 1) && (hs_is_equal_##type_name(table[pos].key, key))) { \
 			uint32_t distance; \
 			if (value != NULL) { \
 				*value = table[pos].value; \
@@ -339,7 +354,7 @@ static inline int hs_hashtable_remove_##name(struct hashtable_##type_name *table
 struct value_##name { \
 	void *vals[value_entries]; \
 };\
-struct hashtable_string { \
+struct hs_hashtable_##name { \
 	uint32_t hop_info; \
 	const char *key; \
 	struct value_##name value; \
@@ -356,10 +371,6 @@ static inline uint32_t hash_func_##name##_string(const char* key) \
 	} \
 	return hs_hash32(hash, order); \
 } \
-static inline int is_equal_string(const char *s1, const char *s2) \
-{ \
-	return !strcmp(s1, s2); \
-} \
 DECLARE_HS_HASHTABLE(name, order, string, const char *, value_entries)
 
 
@@ -368,7 +379,7 @@ DECLARE_HS_HASHTABLE(name, order, string, const char *, value_entries)
 struct value_##name { \
 	void *vals[value_entries]; \
 };\
-struct hashtable_uint32_t { \
+struct hs_hashtable_##name { \
 	uint32_t hop_info; \
 	uint32_t key; \
 	struct value_##name value; \
@@ -376,11 +387,6 @@ struct hashtable_uint32_t { \
 static inline uint32_t hash_func_##name##_uint32_t(uint32_t key) \
 { \
 	return hs_hash32(key, order); \
-} \
-\
-static inline int is_equal_uint32_t(uint32_t a, uint32_t b) \
-{ \
-	return a == b; \
 } \
 \
 DECLARE_HS_HASHTABLE(name, order, uint32_t, uint32_t, value_entries)
@@ -391,7 +397,7 @@ DECLARE_HS_HASHTABLE(name, order, uint32_t, uint32_t, value_entries)
 struct value_##name { \
 	void *vals[value_entries]; \
 };\
-struct hashtable_uint64_t { \
+struct hs_hashtable_##name { \
 	uint32_t hop_info; \
 	uint64_t key; \
 	struct value_##name value; \
@@ -401,14 +407,17 @@ static inline uint32_t hash_func_##name##_uint64_t(uint64_t key) \
 	return hs_hash6432shift(key, order); \
 } \
 \
-static inline int is_equal_uint64_t(uint64_t a, uint64_t b) \
-{ \
-	return a == b; \
-} \
-\
 DECLARE_HS_HASHTABLE(name, order, uint64_t, uint64_t, value_entries)
 
 
+
+/*
+ * The type of the hash table declared as "name". Use it to declare
+ * pointers to the table, e.g.
+ * HS_HASHTABLE_TYPE(name) *table = HS_HASHTABLE_CREATE(name);
+ */
+#define HS_HASHTABLE_TYPE(name) \
+	struct hs_hashtable_##name
 
 /*
  * Creates a hash table.
