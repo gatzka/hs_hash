@@ -1,7 +1,7 @@
 /*
- *The MIT License (MIT)
+ * The MIT License (MIT)
  *
- * Copyright (c) <2020> <Stephan Gatzka>
+ * Copyright (c) 2020 Stephan Gatzka
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,12 +26,74 @@
 
 /*
  * General description. This file implements a hash table based on an
- * algorithm called hopscotch hashing. Hopscotch hashing is an closed
+ * algorithm called hopscotch hashing. Hopscotch hashing is a closed
  * hashing algorithm with open addressing. The main idea is to encode
  * the distance to the calculated hash position in a bitmap associated
  * with each hash index. When inserting a key/value pair the algorithm
- * tries to reorder hash table entries that each entry is in the maximum
- * distance the bitmap can contain. (hop_range in this implementation).
+ * reorders hash table entries so that each entry stays within the
+ * maximum distance the bitmap can hold (32 slots, hop_range in this
+ * implementation).
+ *
+ * Usage: a hash table is declared with one of
+ *
+ * DECLARE_HS_HASHTABLE_UINT32(name, order, value_entries)
+ * DECLARE_HS_HASHTABLE_UINT64(name, order, value_entries)
+ * DECLARE_HS_HASHTABLE_STRING(name, order, value_entries)
+ *
+ * name:          name of the table, passed as first argument to all
+ *                other macros.
+ * order:         the table has 2^order slots (order 1 to 31). The size
+ *                can't be changed later. PUT may return
+ *                HS_HASHTABLE_FULL before all slots are used: with
+ *                random keys, the first PUT failed at a load of 78% to
+ *                97% in tests, the lower values with large tables. So
+ *                choose order such that the table is at most about 75%
+ *                full.
+ * value_entries: number of pointers stored per key. The value type is
+ *                struct value_<name> { void *vals[value_entries]; }.
+ *
+ * The declaration defines the table's types and static functions. It
+ * can be placed in a header if several source files use the same table.
+ *
+ * HS_HASHTABLE_INVALIDENTRY converted to the key type, i.e. UINT32_MAX,
+ * UINT64_MAX or (const char *)-1, marks empty slots and can't be used
+ * as a key.
+ *
+ * String tables store the key pointer, not a copy of the string. The
+ * string must stay valid and unchanged as long as the key is in the
+ * table. If PUT updates a key that is already in the table, the table
+ * keeps the pointer passed to the first PUT. REMOVE doesn't return the
+ * stored pointer, so if the key strings are allocated dynamically, keep
+ * the pointer elsewhere, e.g. in one of the value entries.
+ *
+ * Example:
+ *
+ * DECLARE_HS_HASHTABLE_UINT32(can_ids, 13, 1)
+ *
+ * int example(void *device)
+ * {
+ *     HS_HASHTABLE_TYPE(can_ids) *table = HS_HASHTABLE_CREATE(can_ids);
+ *     struct value_can_ids value;
+ *     int ret;
+ *
+ *     if (table == NULL) {
+ *         return -1;
+ *     }
+ *
+ *     value.vals[0] = device;
+ *     ret = HS_HASHTABLE_PUT(can_ids, table, 0x123, value, NULL);
+ *     if (ret == HS_HASHTABLE_SUCCESS) {
+ *         ret = HS_HASHTABLE_GET(can_ids, table, 0x123, &value);
+ *         // On success, value.vals[0] is device again.
+ *         HS_HASHTABLE_REMOVE(can_ids, table, 0x123, NULL);
+ *     }
+ *
+ *     HS_HASHTABLE_DELETE(can_ids, table);
+ *     return ret;
+ * }
+ *
+ * The return values are described at the macros at the end of this
+ * file.
  *
  * Concurrency: the hash table supports one writer and readers that
  * interrupt the writer. Every HS_HASHTABLE_PUT or HS_HASHTABLE_REMOVE
@@ -53,7 +115,8 @@
  * Please use only the macros DECLARE_HS_HASHTABLE_STRING,
  * DECLARE_HS_HASHTABLE_UINT32, DECLARE_HS_HASHTABLE_UINT64,
  * HS_HASHTABLE_TYPE, HS_HASHTABLE_CREATE, HS_HASHTABLE_DELETE,
- * HS_HASHTABLE_GET, HS_HASHTABLE_REMOVE and HS_HASHTABLE_PUT.
+ * HS_HASHTABLE_GET, HS_HASHTABLE_REMOVE and HS_HASHTABLE_PUT, the
+ * return value macros and the type struct value_<name>.
  * Do not call the other functions or use the other types directly.
  *
  * Please note that in the Linux kernel HS_HASHTABLE_CREATE shall only
@@ -62,12 +125,6 @@
  * from vmalloc() and are not physically contiguous then. This requires
  * Linux 4.12 or newer. HS_HASHTABLE_DELETE must not be called from NMI
  * context.
- *
- * The typical usage for example is:
- * DECLARE_HS_HASHTABLE_UINT32(CANHARDWARE_HASHTABLE, 13)
- * hashtable = HS_HASHTABLE_CREATE(CANHARDWARE_HASHTABLE);
- * HS_HASHTABLE_PUT(CANHARDWARE_HASHTABLE, hashtable, key, value, prev_value);
- * value = HS_HASHTABLE_GET(CANHARDWARE_HASHTABLE, hashtable, key);
  */
 
 #ifndef HS_HASHTABLE_H
@@ -211,8 +268,8 @@ static inline int hs_is_equal_uint64_t(uint64_t a, uint64_t b)
 /*
  * Declares a hash table of name "name" and size 2^order. This macro is
  * just for internal use. Do not use it to declare a hash table, use
- * DECLARE_HASHTABLE_STRING, DECLARE_HASHTABLE_UINT32 or
- * DECLARE_HASHTABLE_UINT64 instead.
+ * DECLARE_HS_HASHTABLE_STRING, DECLARE_HS_HASHTABLE_UINT32 or
+ * DECLARE_HS_HASHTABLE_UINT64 instead.
  *
  * There are two different macro parameters required for the type of the
  * hash table: type_name and type. type_name denotes the unique name
@@ -220,7 +277,7 @@ static inline int hs_is_equal_uint64_t(uint64_t a, uint64_t b)
  * underlying C type that is used in the hash table. This is only
  * required for the case of a string hash table. Here we have "type_name
  * string" and type "const char *". Please see also
- * DECLARE_HASHTABLE_STRING.
+ * DECLARE_HS_HASHTABLE_STRING.
  */
 #define DECLARE_HS_HASHTABLE(name, order, type_name, type, value_entries) \
 \
@@ -533,13 +590,16 @@ DECLARE_HS_HASHTABLE(name, order, uint64_t, uint64_t, value_entries)
 	struct hs_hashtable_##name
 
 /*
- * Creates a hash table.
+ * Creates an empty hash table. Returns a pointer to the table, or NULL
+ * if the memory allocation (HS_HASH_MALLOC) fails.
  */
 #define HS_HASHTABLE_CREATE(name) \
 	hs_hashtable_create_##name()
 
 /*
- * Destroys a hash table.
+ * Destroys a hash table and sets table to NULL. No reader may use the
+ * table anymore. The values (and, for string tables, the key strings)
+ * still in the table are not freed.
  */
 #define HS_HASHTABLE_DELETE(name, table) \
 	do { \
