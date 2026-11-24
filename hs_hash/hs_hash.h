@@ -335,11 +335,14 @@ static inline int hs_hashtable_remove_##name(struct hs_hashtable_##name *table, 
 			if (value != NULL) { \
 				*value = table[pos].value; \
 			} \
-			table[pos].key = (type)HS_HASHTABLE_INVALIDENTRY; \
-			HS_HASH_WMB(); \
-			memset(&table[pos].value, 0, sizeof(table[pos].value)); \
 			distance = wrap_pos##name(pos - hash_pos); \
+/* Unpublish the entry before invalidating it. Otherwise a reader might */ \
+/* follow a still set hop_info bit to an invalidated key (which crashes */ \
+/* strcmp() for string tables). */ \
 			table[hash_pos].hop_info = hop_info & ~(1 << distance); \
+			HS_HASH_WMB(); \
+			table[pos].key = (type)HS_HASHTABLE_INVALIDENTRY; \
+			memset(&table[pos].value, 0, sizeof(table[pos].value)); \
 			return HS_HASHTABLE_SUCCESS; \
 		} \
 		check_hop_info = check_hop_info >> 1; \
