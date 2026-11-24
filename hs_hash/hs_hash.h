@@ -139,6 +139,18 @@
 	#error "hs_hash: HS_HASH_ADD_RANGE must be at least 1"
 #endif
 
+/*
+ * The functions declared by the DECLARE_HS_HASHTABLE_* macros are
+ * expanded in the user's source file, so clang reports every one the
+ * program doesn't call (-Wunused-function), unlike static inline
+ * functions defined in a header.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+	#define HS_HASH_UNUSED __attribute__((unused))
+#else
+	#define HS_HASH_UNUSED
+#endif
+
 /* Return values. */
 #define HS_HASHTABLE_SUCCESS 0
 /* GET, REMOVE: the key is not in the table. Same value as */
@@ -223,12 +235,12 @@ static const uint32_t table_size_##name = (((uint32_t)1) << (order)); \
 typedef char hs_hash_table_##name##_exceeds_max_object_size[ \
 	((((size_t)-1) >> 1) / sizeof(struct hs_hashtable_##name) >= (((uint32_t)1) << (order))) ? 1 : -1]; \
 \
-static inline uint32_t wrap_pos##name(uint32_t pos) \
+static inline HS_HASH_UNUSED uint32_t wrap_pos##name(uint32_t pos) \
 { \
 	return pos & (table_size_##name - 1); \
 } \
 \
-static inline struct hs_hashtable_##name *hs_hashtable_create_##name(void) \
+static inline HS_HASH_UNUSED struct hs_hashtable_##name *hs_hashtable_create_##name(void) \
 { \
 	struct hs_hashtable_##name *table = (struct hs_hashtable_##name *)HS_HASH_MALLOC((size_t)table_size_##name * sizeof(struct hs_hashtable_##name)); \
 	if (table != NULL) { \
@@ -241,13 +253,13 @@ static inline struct hs_hashtable_##name *hs_hashtable_create_##name(void) \
 	return table; \
 } \
 \
-static inline void hs_hashtable_delete_##name(struct hs_hashtable_##name *table) \
+static inline HS_HASH_UNUSED void hs_hashtable_delete_##name(struct hs_hashtable_##name *table) \
 { \
 	HS_HASH_FREE(table); \
 	return; \
 } \
 \
-static inline int hs_hashtable_get_##name(struct hs_hashtable_##name *table, type key, struct value_##name *value) \
+static inline HS_HASH_UNUSED int hs_hashtable_get_##name(struct hs_hashtable_##name *table, type key, struct value_##name *value) \
 { \
 	uint32_t hash_pos = hash_func_##name##_##type_name(key); \
 	uint32_t pos = hash_pos; \
@@ -265,12 +277,12 @@ static inline int hs_hashtable_get_##name(struct hs_hashtable_##name *table, typ
 	return HS_HASHTABLE_NOTFOUND; \
 } \
 \
-static inline uint32_t hop_range_##name(void) \
+static inline HS_HASH_UNUSED uint32_t hop_range_##name(void) \
 { \
 	return sizeof(((struct hs_hashtable_##name*)0)->hop_info) * 8; \
 }\
 \
-static inline uint32_t find_closer_entry_##name(struct hs_hashtable_##name *table, uint32_t free_position) \
+static inline HS_HASH_UNUSED uint32_t find_closer_entry_##name(struct hs_hashtable_##name *table, uint32_t free_position) \
 { \
 	uint32_t check_distance = (hop_range_##name() - 1); \
 	while (check_distance > 0) { \
@@ -308,7 +320,7 @@ static inline uint32_t find_closer_entry_##name(struct hs_hashtable_##name *tabl
 	return 0xffffffff; \
 } \
 \
-static inline int hs_hashtable_put_##name(struct hs_hashtable_##name *table, type key, struct value_##name value, struct value_##name *prev_value) \
+static inline HS_HASH_UNUSED int hs_hashtable_put_##name(struct hs_hashtable_##name *table, type key, struct value_##name value, struct value_##name *prev_value) \
 { \
 	uint32_t hash_pos; \
 	uint32_t pos; \
@@ -421,7 +433,7 @@ static inline int hs_hashtable_put_##name(struct hs_hashtable_##name *table, typ
 	return HS_HASHTABLE_FULL; \
 } \
 \
-static inline int hs_hashtable_remove_##name(struct hs_hashtable_##name *table, type key, struct value_##name *value) \
+static inline HS_HASH_UNUSED int hs_hashtable_remove_##name(struct hs_hashtable_##name *table, type key, struct value_##name *value) \
 { \
 	uint32_t hash_pos = hash_func_##name##_##type_name(key); \
 	uint32_t pos = hash_pos; \
@@ -460,7 +472,7 @@ struct hs_hashtable_##name { \
 	const char *key; \
 	struct value_##name value; \
 }; \
-static inline uint32_t hash_func_##name##_string(const char* key) \
+static inline HS_HASH_UNUSED uint32_t hash_func_##name##_string(const char* key) \
 { \
 	uint32_t hash = 0; \
 	uint32_t c = *key; \
@@ -485,7 +497,7 @@ struct hs_hashtable_##name { \
 	uint32_t key; \
 	struct value_##name value; \
 }; \
-static inline uint32_t hash_func_##name##_uint32_t(uint32_t key) \
+static inline HS_HASH_UNUSED uint32_t hash_func_##name##_uint32_t(uint32_t key) \
 { \
 	return hs_hash32(key, order); \
 } \
@@ -503,7 +515,7 @@ struct hs_hashtable_##name { \
 	uint64_t key; \
 	struct value_##name value; \
 }; \
-static inline uint32_t hash_func_##name##_uint64_t(uint64_t key) \
+static inline HS_HASH_UNUSED uint32_t hash_func_##name##_uint64_t(uint64_t key) \
 { \
 	return hs_hash6432shift(key, order); \
 } \
