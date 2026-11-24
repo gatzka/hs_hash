@@ -279,6 +279,9 @@ static inline int hs_hashtable_put_##name(struct hs_hashtable_##name *table, typ
 	uint32_t free_distance; \
 	uint32_t free_pos; \
 	uint32_t closer_pos; \
+	uint32_t old_pos = 0xffffffff; \
+	uint32_t old_distance; \
+	uint32_t release_pos; \
 	if (prev_value != NULL) { \
 		memset(prev_value, 0, sizeof(*prev_value)); \
 	} \
@@ -292,17 +295,20 @@ static inline int hs_hashtable_put_##name(struct hs_hashtable_##name *table, typ
 	hop_info = table[hash_pos].hop_info; \
 	while (hop_info != 0) { \
 		if (((hop_info & 0x1) == 1) && (hs_is_equal_##type_name(table[pos].key, key))) { \
-			if (prev_value != NULL) { \
-				*prev_value = table[pos].value; \
-			} \
-			table[pos].value = value; \
-			return HS_HASHTABLE_SUCCESS; \
+			old_pos = pos; \
+/* Keep the stored key (for string tables the stored pointer), only the value gets replaced. */ \
+			key = table[pos].key; \
+			break; \
 		} \
 		hop_info = hop_info >> 1; \
 		pos = wrap_pos##name(pos + 1); \
 	} \
 \
-/* The key wasn't found, so let's insert. */ \
+/* Write the entry to a free slot. This is also done if the key is */ \
+/* already in the table: the new value goes to a free slot and the */ \
+/* hop_info bits are switched over afterwards (and back, see below). */ \
+/* Overwriting the value in place would let an interrupting */ \
+/* HS_HASHTABLE_GET read a mix of the old and the new value. */ \
 /* Make linear search from hash_pos to add_range_##name to find an empty table entry. */ \
 	free_distance = 0; \
 	pos = hash_pos; \
@@ -323,6 +329,37 @@ static inline int hs_hashtable_put_##name(struct hs_hashtable_##name *table, typ
 				hop_info = table[hash_pos].hop_info; \
 				hop_info = hop_info | (((uint32_t)1) << free_distance); \
 				table[hash_pos].hop_info = hop_info; \
+				if (old_pos != 0xffffffff) { \
+/* Now the old and the new entry are both reachable, each of them complete. */ \
+/* Unpublish the old one with a separate store, so each hop_info store */ \
+/* changes a single bit. Then readers never miss the key, even on CPUs */ \
+/* that store a uint32_t in several parts. */ \
+					old_distance = wrap_pos##name(old_pos - hash_pos); \
+					HS_HASH_WMB(); \
+					hop_info = hop_info & ~(((uint32_t)1) << old_distance); \
+					table[hash_pos].hop_info = hop_info; \
+					HS_HASH_WMB(); \
+					if (prev_value != NULL) { \
+						*prev_value = table[old_pos].value; \
+					} \
+					release_pos = old_pos; \
+					if (old_distance < free_distance) { \
+/* The old slot is closer to hash_pos. Move the entry back, otherwise */ \
+/* updates push entries away from their bucket and HS_HASHTABLE_GET */ \
+/* gets slower. Nothing references the old slot now, so it can be */ \
+/* overwritten safely before it gets published again. */ \
+						table[old_pos].value = value; \
+						HS_HASH_WMB(); \
+						hop_info = hop_info | (((uint32_t)1) << old_distance); \
+						table[hash_pos].hop_info = hop_info; \
+						HS_HASH_WMB(); \
+						table[hash_pos].hop_info = hop_info & ~(((uint32_t)1) << free_distance); \
+						HS_HASH_WMB(); \
+						release_pos = free_pos; \
+					} \
+					table[release_pos].key = (type)HS_HASHTABLE_INVALIDENTRY; \
+					memset(&table[release_pos].value, 0, sizeof(table[release_pos].value)); \
+				} \
 				return HS_HASHTABLE_SUCCESS; \
 			} \
 /* Now we must try to swap some entries */ \
@@ -335,6 +372,10 @@ static inline int hs_hashtable_put_##name(struct hs_hashtable_##name *table, typ
 				table[free_pos].key = (type)HS_HASHTABLE_INVALIDENTRY; \
 				memset(&table[free_pos].value, 0, sizeof(table[free_pos].value)); \
 				break; \
+			} \
+/* If the entry to be updated was moved into free_pos, track its new position. */ \
+			if (closer_pos == old_pos) { \
+				old_pos = free_pos; \
 			} \
 			free_pos = closer_pos; \
 			free_distance = wrap_pos##name(free_pos - hash_pos); \
@@ -457,12 +498,16 @@ DECLARE_HS_HASHTABLE(name, order, uint64_t, uint64_t, value_entries)
 
 /*
  * Maps the key to the value in table. Return values:
- * HASHTABLE_FULL: no space left in hash_table
- * HASHTABLE_KEYINVAL: invalid key (HASHTABLE_INVALIDENTRY)
- * HASHTABLE_SUCCESS: everything o.k.
+ * HS_HASHTABLE_FULL: no space left in the table. This can also happen if
+ *                    key is already in the table, because the new value
+ *                    is written to a free slot before the old one is
+ *                    released. The old value stays in the table then.
+ * HS_HASHTABLE_KEYINVAL: invalid key (HS_HASHTABLE_INVALIDENTRY)
+ * HS_HASHTABLE_SUCCESS: everything o.k.
  *
- * if prev_value != NULL, the previous value stored for this
- * key will be assigned to prev_value
+ * If prev_value != NULL, the previous value stored for this key is
+ * assigned to prev_value, if the key was in the table and the call
+ * succeeded. Otherwise prev_value is zeroed.
  */
 #define HS_HASHTABLE_PUT(name, table, key, value, prev_value) \
 	hs_hashtable_put_##name((table), (key), (value), (prev_value))
