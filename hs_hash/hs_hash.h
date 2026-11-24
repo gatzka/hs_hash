@@ -321,7 +321,7 @@ static inline HS_HASH_UNUSED void hs_hashtable_delete_##name(struct hs_hashtable
 	return; \
 } \
 \
-static inline HS_HASH_UNUSED int hs_hashtable_get_##name(struct hs_hashtable_##name *table, type key, struct value_##name *value) \
+static inline HS_HASH_UNUSED int hs_hashtable_get_##name(const struct hs_hashtable_##name *table, type key, struct value_##name *value) \
 { \
 	uint32_t hash_pos = hs_hash_func_##name##_##type_name(key); \
 	uint32_t pos = hash_pos; \
@@ -534,15 +534,19 @@ struct hs_hashtable_##name { \
 	uint32_t hop_info; \
 	struct value_##name value; \
 }; \
-static inline HS_HASH_UNUSED uint32_t hs_hash_func_##name##_string(const char* key) \
+static inline HS_HASH_UNUSED uint32_t hs_hash_func_##name##_string(const char *key) \
 { \
+/* Read the characters as unsigned char, like strcmp() does. Otherwise */ \
+/* bytes >= 0x80 would be sign extended where char is signed, and the */ \
+/* same string would hash differently on different platforms. */ \
+	const unsigned char *s = (const unsigned char *)key; \
 	uint32_t hash = 0; \
-	uint32_t c = *key; \
-	++key; \
+	uint32_t c = *s; \
+	++s; \
 	while (c != 0) { \
 		hash = ((c + (hash << 6U)) + (hash << 16U)) - hash; \
-		c = *key; \
-		++key; \
+		c = *s; \
+		++s; \
 	} \
 	return hs_hash32(hash, order); \
 } \
