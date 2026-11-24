@@ -259,9 +259,14 @@ static inline uint32_t find_closer_entry_##name(struct hs_hashtable_##name *tabl
 			table[free_position].key = table[hop_position].key; \
 			table[free_position].value = table[hop_position].value; \
 			HS_HASH_WMB(); \
-			check_hop_info = check_hop_info & ~(mask); \
+/* Publish the copy first, then unpublish the original, with separate */ \
+/* stores that change a single bit each. In between, both (identical) */ \
+/* copies are reachable, so readers never miss the entry, even on CPUs */ \
+/* that store a uint32_t in several parts. */ \
 			check_hop_info = check_hop_info | (((uint32_t)1) << check_distance); \
 			table[check_position].hop_info = check_hop_info; \
+			HS_HASH_WMB(); \
+			table[check_position].hop_info = check_hop_info & ~(mask); \
 /* hop_position is no longer referenced. Make sure that is visible before the slot gets reused. */ \
 			HS_HASH_WMB(); \
 			return hop_position ;\
