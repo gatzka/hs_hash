@@ -1,0 +1,8 @@
+# Files created by the kernel build system
+*.o
+*.ko
+*.mod
+*.mod.c
+.*.cmd
+modules.order
+Module.symvers

@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux, ${{ matrix.compiler }}, ${{ matrix.build }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        build: [sanitizers, release]
+        include:
+          - build: sanitizers
+            cmake_args: -DCMAKE_BUILD_TYPE=Debug -DHS_HASH_SANITIZE=ON
+          - build: release
+            cmake_args: -DCMAKE_BUILD_TYPE=Release
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_C_COMPILER=${{ matrix.compiler }} -DHS_HASH_WARNINGS_AS_ERRORS=ON ${{ matrix.cmake_args }}
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --parallel 4
+
+  windows:
+    name: Windows, MSVC, ${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, Win32, ARM64]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure
+        run: cmake -S . -B build -A ${{ matrix.arch }} -DHS_HASH_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      # ARM64 is cross compiled and can't run on the x64 runner.
+      - name: Test
+        if: matrix.arch != 'ARM64'
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  cross:
+    name: Cross compilers and C++
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install compilers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi gcc-mingw-w64
+      - name: Compile
+        run: |
+          flags="-std=c99 -O2 -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wcast-qual -Wcast-align -Wstrict-prototypes -Wmissing-prototypes -Wundef -Werror -I."
+          for cpu in cortex-m0 cortex-m4 cortex-m7; do
+            arm-none-eabi-gcc -mcpu=$cpu -mthumb $flags -c tests/warnings.c -o /dev/null
+          done
+          x86_64-w64-mingw32-gcc $flags -c tests/warnings.c -o /dev/null
+          i686-w64-mingw32-gcc $flags -c tests/warnings.c -o /dev/null
+          cxxflags="-std=c++11 -O2 -Wall -Wextra -Wpedantic -Wcast-qual -Werror -I."
+          g++ -x c++ $cxxflags -c tests/warnings.c -o /dev/null
+          clang++ -x c++ $cxxflags -c tests/warnings.c -o /dev/null
+
+  kernel:
+    name: Linux kernel module
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install kernel headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-headers-$(uname -r)
+      - name: Build
+        run: make -C /lib/modules/$(uname -r)/build M=$PWD/tests/kernel KCFLAGS=-Werror modules

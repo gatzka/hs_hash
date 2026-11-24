@@ -1,0 +1,5 @@
+# Builds a module that uses hs_hash, to check that the header compiles in
+# the Linux kernel. It is only built, never loaded:
+# make -C /lib/modules/$(uname -r)/build M=$PWD/tests/kernel modules
+obj-m := hs_hash_test.o
+ccflags-y := -I$(src)/../..
